@@ -1,0 +1,43 @@
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Aqua Flow</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="mobile-container">
+        <div id="status-bar">
+            <div class="time">9:41</div>
+            <div class="icons">
+                <img src="https://img.icons8.com/ios-glyphs/30/ffffff/signal.png" alt="signal"/>
+                <img src="https://img.icons8.com/ios-glyphs/30/ffffff/wifi.png" alt="wifi"/>
+                <img src="https://img.icons8.com/ios-glyphs/30/ffffff/full-battery.png" alt="battery"/>
+            </div>
+        </div>
+        <div class="game-wrapper">
+            <h1 class="title">Aqua Flow</h1>
+            <div class="info-container">
+                <div class="score">SKOR: <span id="score">0</span></div>
+                <div class="flow-bar-container">
+                    <div id="flowBar" class="flow-bar"></div>
+                </div>
+            </div>
+            <canvas id="gameCanvas"></canvas>
+            <div id="startScreen" class="game-screen">
+                <h2 class="screen-title">BAŞLAMAK İÇİN DOKUN</h2>
+                <button id="startButton" class="button">BAŞLA</button>
+            </div>
+            <div id="gameOverScreen" class="game-screen" style="display: none;">
+                <h2 class="screen-title">OYUN BİTTİ</h2>
+                <p>Skorun: <span id="finalScore">0</span></p>
+                <button id="restartButton" class="button">TEKRAR DENE</button>
+            </div>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,394 @@
+document.addEventListener('DOMContentLoaded', () => {
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // UI Elements
+    const scoreEl = document.getElementById('score');
+    const finalScoreEl = document.getElementById('finalScore');
+    const flowBar = document.getElementById('flowBar');
+    const startScreen = document.getElementById('startScreen');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const startButton = document.getElementById('startButton');
+    const restartButton = document.getElementById('restartButton');
+
+    let canvasWidth, canvasHeight;
+
+    function resizeCanvas() {
+        const container = canvas.parentElement;
+        const style = getComputedStyle(container);
+        const rect = canvas.getBoundingClientRect();
+        canvasWidth = rect.width;
+        canvasHeight = rect.height;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+
+        console.log('resizeCanvas - rect.width:', rect.width, 'rect.height:', rect.height);
+        console.log('resizeCanvas - canvas.width:', canvas.width, 'canvas.height:', canvas.height);
+        console.log('resizeCanvas - canvas.getBoundingClientRect():', rect);
+
+        resetGame();
+    }
+
+    // --- Game State ---
+    let gameState = 'start';
+    let frameCount = 0;
+    let score = 0;
+    let flow = 0;
+    let level = 1;
+    let gameSpeed = 1;
+    let levelUpScore = 2000;
+
+    // --- Entities ---
+    let player = {};
+    let obstacles = [];
+    let energyOrbs = [];
+    let particles = [];
+
+    // --- Player Object ---
+    const playerProto = {
+        x: 0, y: 0, radius: 15, renderRadius: 15, color: '#4D96FF',
+        inFlow: false, flowDuration: 0, isDashing: false,
+        dashCooldown: 0, dashDuration: 0, baseY: 0,
+        draw() {
+            // Pulsating effect
+            this.renderRadius = this.radius + Math.sin(frameCount * 0.1) * 2;
+
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.renderRadius, 0, Math.PI * 2);
+            let playerColor = this.inFlow ? '#6BCB77' : this.color; // Green for flow
+            if (this.isDashing) playerColor = '#FFFFFF';
+            ctx.fillStyle = playerColor;
+            ctx.shadowColor = playerColor;
+            ctx.shadowBlur = 25;
+            ctx.fill();
+            ctx.closePath();
+            ctx.shadowBlur = 0;
+        }
+    };
+    
+    // --- Particle System ---
+    function createParticle(x, y, color, count) {
+        for (let i = 0; i < count; i++) {
+            particles.push({
+                x, y,
+                vx: (Math.random() - 0.5) * 5,
+                vy: (Math.random() - 0.5) * 5,
+                radius: Math.random() * 3 + 1,
+                color: color,
+                life: 40 // a bit longer life
+            });
+        }
+    }
+
+    function handleParticles() {
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life--;
+
+            ctx.globalAlpha = p.life / 40;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.closePath();
+
+            if (p.life <= 0) {
+                particles.splice(i, 1);
+            }
+        }
+        ctx.globalAlpha = 1.0;
+    }
+    
+    // --- Background Particles ---
+    function createBgParticle() {
+        particles.push({
+            x: Math.random() * canvasWidth,
+            y: Math.random() * canvasHeight,
+            vx: 0,
+            vy: 0.3 * gameSpeed, // Slower and calmer
+            radius: Math.random() * 2,
+            color: 'rgba(224, 225, 221, 0.15)', // Match new text color
+            life: Infinity,
+            isBg: true
+        });
+    }
+
+    function handleBgParticles() {
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            if (!p.isBg) continue;
+            
+            p.y += p.vy;
+            
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.closePath();
+
+            if (p.y > canvasHeight) {
+                p.y = 0;
+                p.x = Math.random() * canvasWidth;
+            }
+        }
+    }
+
+
+    // --- Game Functions ---
+    function addObstacle() {
+        const typeRoll = Math.random();
+        let obstacle;
+
+        if (level > 1 && typeRoll > 0.7) {
+            obstacle = {
+                type: 'homing', x: Math.random() * canvasWidth, y: -30,
+                width: 25, height: 25, color: '#F72585', // New vibrant color
+                speed: 2 * gameSpeed
+            };
+        } else {
+            const gapWidth = Math.max(120, 180 - (level * 5));
+            const gapStart = Math.random() * (canvasWidth - gapWidth);
+            obstacle = {
+                type: 'standard', x: 0, y: -30, width: canvasWidth, height: 25,
+                color: '#FF6B6B', speed: 3.5 * gameSpeed, // Match button color
+                gapStart: gapStart, gapEnd: gapStart + gapWidth
+            };
+        }
+        obstacles.push(obstacle);
+    }
+
+    function addEnergyOrb() {
+        const x = Math.random() * (canvasWidth - 40) + 20;
+        const y = -20;
+        energyOrbs.push({ 
+            x, y, radius: 8, color: '#80FFDB', speed: 2 * gameSpeed,
+            baseX: x, angle: Math.random() * Math.PI * 2, amplitude: Math.random() * 30 + 20
+        });
+    }
+
+    function handleEntities() {
+        handleBgParticles();
+        handleParticles();
+
+        obstacles.forEach((obs, i) => {
+            obs.y += obs.speed;
+            if (obs.type === 'homing') {
+                if (obs.x < player.x) obs.x += obs.speed * 0.25;
+                if (obs.x > player.x) obs.x -= obs.speed * 0.25;
+            }
+            drawObstacle(obs);
+            checkCollision(obs);
+            if (obs.y - obs.height > canvasHeight) obstacles.splice(i, 1);
+        });
+
+        energyOrbs.forEach((orb, i) => {
+            orb.y += orb.speed;
+            orb.angle += 0.05;
+            orb.x = orb.baseX + Math.sin(orb.angle) * orb.amplitude;
+
+            drawEnergyOrb(orb);
+            checkOrbCollection(orb, i);
+            if (orb.y - orb.radius > canvasHeight) energyOrbs.splice(i, 1);
+        });
+    }
+
+    function drawObstacle(obs) {
+        ctx.fillStyle = obs.color;
+        ctx.shadowColor = obs.color;
+        ctx.shadowBlur = 15;
+        if (obs.type === 'homing') {
+            ctx.beginPath();
+            ctx.arc(obs.x, obs.y, obs.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillRect(0, obs.y, obs.gapStart, obs.height);
+            ctx.fillRect(obs.gapEnd, obs.y, canvasWidth - obs.gapEnd, obs.height);
+        }
+        ctx.shadowBlur = 0;
+    }
+
+    function drawEnergyOrb(orb) {
+        ctx.fillStyle = orb.color;
+        ctx.shadowColor = orb.color;
+        ctx.shadowBlur = 20;
+        ctx.beginPath();
+        ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
+
+    function checkCollision(obs) {
+        if (player.inFlow || player.isDashing) return;
+        const dx = player.x - obs.x;
+        const dy = player.y - obs.y;
+        if (obs.type === 'homing') {
+            if (Math.sqrt(dx * dx + dy * dy) < player.radius + obs.width / 2) endGame();
+        } else {
+            if (player.y > obs.y && player.y < obs.y + obs.height) {
+                if (player.x - player.radius < obs.gapStart || player.x + player.radius > obs.gapEnd) endGame();
+            }
+        }
+    }
+
+    function checkOrbCollection(orb, index) {
+        const dx = player.x - orb.x;
+        const dy = player.y - orb.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const magnetRadius = player.inFlow ? 150 : 50; // Have a small magnet radius normally
+
+        if (distance < player.radius + orb.radius + magnetRadius) {
+            // Magnetic pull
+            orb.x += (player.x - orb.x) * 0.1;
+            orb.y += (player.y - orb.y) * 0.1;
+            
+            if (distance < player.radius + orb.radius) {
+                score += 150;
+                flow = Math.min(100, flow + 10);
+                createParticle(orb.x, orb.y, orb.color, 15);
+                energyOrbs.splice(index, 1);
+            }
+        }
+    }
+
+    function updatePlayer() {
+        if (player.dashCooldown > 0) player.dashCooldown--;
+        if (player.isDashing) {
+            player.y -= 5;
+            player.dashDuration--;
+            createParticle(player.x, player.y + player.radius, 'rgba(255, 255, 255, 0.5)', 2);
+            if (player.dashDuration <= 0) player.isDashing = false;
+        } else if (player.y < player.baseY) {
+            player.y = Math.min(player.baseY, player.y + 3);
+        }
+    }
+
+    function updateGameProgress() {
+        score++;
+        scoreEl.textContent = score;
+
+        if (score > levelUpScore) {
+            level++;
+            gameSpeed *= 1.05;
+            levelUpScore *= 2.5;
+            createParticle(canvasWidth / 2, canvasHeight / 2, '#FFFFFF', 50);
+        }
+
+        if (!player.inFlow) {
+            // Slower flow gain, more rewarding to collect orbs
+            flow = Math.min(100, flow + 0.05); 
+            if (flow >= 100) {
+                player.inFlow = true;
+                player.flowDuration = 300; // 5 seconds
+            }
+        }
+        flowBar.style.width = `${flow}%`;
+
+        if (player.inFlow) {
+            player.flowDuration--;
+            if (player.flowDuration <= 0) {
+                player.inFlow = false;
+                flow = 0;
+            }
+        }
+    }
+
+    function startGame() {
+        gameState = 'playing';
+        startScreen.style.display = 'none';
+        gameOverScreen.style.display = 'none';
+        resetGame();
+        gameLoop();
+    }
+
+    function resetGame() {
+        frameCount = 0;
+        score = 0;
+        flow = 0;
+        level = 1;
+        gameSpeed = 1;
+        levelUpScore = 2000;
+
+        obstacles = [];
+        energyOrbs = [];
+        particles = particles.filter(p => p.isBg);
+
+        player = Object.create(playerProto);
+        player.x = canvasWidth / 2;
+        player.baseY = canvasHeight - 150; // Move player up even more
+        player.y = player.baseY;
+        
+        if (particles.filter(p => p.isBg).length === 0) {
+            for(let i = 0; i < 50; i++) {
+                createBgParticle();
+            }
+        }
+    }
+
+    function endGame() {
+        gameState = 'gameOver';
+        finalScoreEl.textContent = score;
+        gameOverScreen.style.display = 'flex';
+        createParticle(player.x, player.y, player.color, 50);
+    }
+
+    function gameLoop() {
+        if (gameState !== 'playing') return;
+
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        
+        updateGameProgress();
+        handleEntities();
+        updatePlayer();
+        player.draw();
+
+        frameCount++;
+        if (frameCount % Math.floor(60 / gameSpeed) === 0) {
+            addObstacle();
+        }
+        if (frameCount % Math.floor(150 / gameSpeed) === 0) {
+            addEnergyOrb();
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    // --- Event Listeners ---
+    function handlePointerMove(x) {
+        const rect = canvas.getBoundingClientRect();
+        player.x = x - rect.left;
+        if (player.x < player.radius) player.x = player.radius;
+        if (player.x > canvasWidth - player.radius) player.x = canvasWidth - player.radius;
+    }
+
+    function triggerDash() {
+        if (player.dashCooldown <= 0 && !player.isDashing) {
+            player.isDashing = true;
+            player.dashDuration = 30;
+            player.dashCooldown = 120;
+            createParticle(player.x, player.y, '#FFFFFF', 20);
+        }
+    }
+
+    // Use pointer events for broader compatibility
+    canvas.addEventListener('pointermove', (e) => {
+        if (gameState === 'playing' && e.pointerType !== 'touch') handlePointerMove(e.clientX);
+    });
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (gameState === 'playing') handlePointerMove(e.touches[0].clientX);
+    }, { passive: false });
+
+    canvas.addEventListener('pointerdown', (e) => {
+        if (gameState === 'playing') triggerDash();
+    });
+    
+    startButton.addEventListener('click', startGame);
+    restartButton.addEventListener('click', startGame);
+    window.addEventListener('resize', resizeCanvas);
+
+    // Initial setup
+    resizeCanvas();
+    startScreen.style.display = 'flex';
+});
