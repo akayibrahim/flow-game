@@ -37,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let level = 1;
     let gameSpeed = 1;
     let levelUpScore = 2000;
+    let keysPressed = {};
 
     // --- Entities ---
     let player = {};
@@ -141,19 +142,46 @@ document.addEventListener('DOMContentLoaded', () => {
         const typeRoll = Math.random();
         let obstacle;
 
-        if (level > 1 && typeRoll > 0.7) {
+        if (level > 1 && typeRoll > 0.8) { // Homing obstacles are even less frequent
             obstacle = {
                 type: 'homing', x: Math.random() * canvasWidth, y: -30,
-                width: 25, height: 25, color: '#F72585', // New vibrant color
+                width: 25, height: 25, color: '#F72585',
                 speed: 2 * gameSpeed
             };
         } else {
-            const gapWidth = Math.max(120, 180 - (level * 5));
-            const gapStart = Math.random() * (canvasWidth - gapWidth);
+            const brickLayout = [];
+            const brickWidth = 40;
+            const numBricksInRow = Math.floor(canvasWidth / brickWidth);
+            let consecutiveGaps = 0;
+
+            // Create a random layout of bricks and gaps
+            for (let i = 0; i < numBricksInRow; i++) {
+                // Adjust probability based on level. More bricks as level increases.
+                const brickProbability = 0.6 + Math.min(0.25, level * 0.02);
+                if (Math.random() < brickProbability) {
+                    brickLayout.push(true); // It's a brick
+                    consecutiveGaps = 0;
+                } else {
+                    brickLayout.push(false); // It's a gap
+                    consecutiveGaps++;
+                }
+            }
+
+            // Ensure there is at least one path wide enough for the player
+            const requiredGaps = Math.ceil((player.radius * 2) / brickWidth);
+            if (consecutiveGaps < requiredGaps) {
+                // If not enough gaps were naturally created, force a path
+                const pathStart = Math.floor(Math.random() * (numBricksInRow - requiredGaps));
+                for (let i = 0; i < requiredGaps; i++) {
+                    brickLayout[pathStart + i] = false;
+                }
+            }
+            
             obstacle = {
-                type: 'standard', x: 0, y: -30, width: canvasWidth, height: 25,
-                color: '#FF6B6B', speed: 3.5 * gameSpeed, // Match button color
-                gapStart: gapStart, gapEnd: gapStart + gapWidth
+                type: 'standard', y: -30, height: 25,
+                color: '#FF6B6B', speed: 3.5 * gameSpeed,
+                brickWidth: brickWidth,
+                layout: brickLayout
             };
         }
         obstacles.push(obstacle);
@@ -195,16 +223,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function drawObstacle(obs) {
-        ctx.fillStyle = obs.color;
         ctx.shadowColor = obs.color;
         ctx.shadowBlur = 15;
+
         if (obs.type === 'homing') {
+            const gradient = ctx.createRadialGradient(obs.x, obs.y, obs.width / 4, obs.x, obs.y, obs.width / 2);
+            gradient.addColorStop(0, '#F72585');
+            gradient.addColorStop(1, '#B5179E');
+            ctx.fillStyle = gradient;
+
             ctx.beginPath();
             ctx.arc(obs.x, obs.y, obs.width / 2, 0, Math.PI * 2);
             ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
         } else {
-            ctx.fillRect(0, obs.y, obs.gapStart, obs.height);
-            ctx.fillRect(obs.gapEnd, obs.y, canvasWidth - obs.gapEnd, obs.height);
+            ctx.fillStyle = obs.color;
+            const brickGap = 2;
+
+            obs.layout.forEach((isBrick, i) => {
+                if (isBrick) {
+                    const x = i * obs.brickWidth;
+                    ctx.fillRect(x, obs.y, obs.brickWidth - brickGap, obs.height);
+                }
+            });
         }
         ctx.shadowBlur = 0;
     }
@@ -221,13 +265,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function checkCollision(obs) {
         if (player.inFlow || player.isDashing) return;
-        const dx = player.x - obs.x;
-        const dy = player.y - obs.y;
+
         if (obs.type === 'homing') {
-            if (Math.sqrt(dx * dx + dy * dy) < player.radius + obs.width / 2) endGame();
+            const dx = player.x - obs.x;
+            const dy = player.y - obs.y;
+            if (Math.sqrt(dx * dx + dy * dy) < player.radius + obs.width / 2) {
+                endGame();
+            }
         } else {
-            if (player.y > obs.y && player.y < obs.y + obs.height) {
-                if (player.x - player.radius < obs.gapStart || player.x + player.radius > obs.gapEnd) endGame();
+            if (player.y > obs.y - player.radius && player.y < obs.y + obs.height + player.radius) {
+                const playerBrickIndex = Math.floor(player.x / obs.brickWidth);
+                if (obs.layout[playerBrickIndex]) {
+                    // More precise check within the brick
+                    const brickX = playerBrickIndex * obs.brickWidth;
+                    if (player.x + player.radius > brickX && player.x - player.radius < brickX + obs.brickWidth) {
+                        endGame();
+                    }
+                }
             }
         }
     }
@@ -253,6 +307,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updatePlayer() {
+        // Keyboard movement
+        if (keysPressed['ArrowLeft']) {
+            player.x -= 7 * gameSpeed;
+        }
+        if (keysPressed['ArrowRight']) {
+            player.x += 7 * gameSpeed;
+        }
+
+        // Clamp player position to screen bounds
+        if (player.x < player.radius) {
+            player.x = player.radius;
+        }
+        if (player.x > canvasWidth - player.radius) {
+            player.x = canvasWidth - player.radius;
+        }
+
+        // Dash logic
         if (player.dashCooldown > 0) player.dashCooldown--;
         if (player.isDashing) {
             player.y -= 5;
@@ -382,6 +453,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     canvas.addEventListener('pointerdown', (e) => {
         if (gameState === 'playing') triggerDash();
+    });
+
+    window.addEventListener('keydown', (e) => {
+        keysPressed[e.key] = true;
+        // Prevent default browser action for space key
+        if (e.key === ' ') {
+            e.preventDefault();
+            triggerDash();
+        }
+    });
+
+    window.addEventListener('keyup', (e) => {
+        keysPressed[e.key] = false;
     });
     
     startButton.addEventListener('click', startGame);
