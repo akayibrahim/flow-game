@@ -45,9 +45,10 @@ body {
     z-index: 100;
 }
 
-#status-bar .icons img {
+#status-bar .icons img, #status-bar .icons svg {
     margin-left: 8px;
     height: 16px;
+    fill: white; /* For SVG icons */
 }
 
 .game-wrapper {

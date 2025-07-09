@@ -11,6 +11,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const startButton = document.getElementById('startButton');
     const restartButton = document.getElementById('restartButton');
 
+    // Audio Elements
+    const backgroundMusic = new Audio('YOUR_BACKGROUND_MUSIC.mp3'); // Replace with your music file
+    backgroundMusic.loop = true;
+    backgroundMusic.volume = 0.3;
+
+    const orbCollectSound = new Audio('YOUR_ORB_COLLECT_SOUND.mp3'); // Replace with your sound file
+    orbCollectSound.volume = 0.7;
+
+    const dashSound = new Audio('YOUR_DASH_SOUND.mp3'); // Replace with your sound file
+    dashSound.volume = 0.5;
+
+    const levelUpSound = new Audio('YOUR_LEVEL_UP_SOUND.mp3'); // Replace with your sound file
+    levelUpSound.volume = 0.6;
+
+    const gameOverSound = new Audio('YOUR_GAME_OVER_SOUND.mp3'); // Replace with your sound file
+    gameOverSound.volume = 0.8;
+
+    function playSound(audioElement) {
+        audioElement.currentTime = 0; // Rewind to start for quick playback
+        audioElement.play().catch(e => console.error("Audio playback failed:", e));
+    }
+
     let canvasWidth, canvasHeight;
 
     function resizeCanvas() {
@@ -45,24 +67,45 @@ document.addEventListener('DOMContentLoaded', () => {
     let energyOrbs = [];
     let particles = [];
 
-    // --- Player Object ---
+    // --- Player Object --- (Jellyfish)
     const playerProto = {
-        x: 0, y: 0, radius: 15, renderRadius: 15, color: '#4D96FF',
+        x: 0, y: 0, radius: 15, renderRadius: 15,
         inFlow: false, flowDuration: 0, isDashing: false,
         dashCooldown: 0, dashDuration: 0, baseY: 0,
+        angle: 0, // For tentacle animation
         draw() {
-            // Pulsating effect
-            this.renderRadius = this.radius + Math.sin(frameCount * 0.1) * 2;
+            this.angle += 0.1;
+            const pulsatingRadius = this.radius + Math.sin(frameCount * 0.1) * 2;
 
+            // Tentacles
             ctx.beginPath();
-            ctx.arc(this.x, this.y, this.renderRadius, 0, Math.PI * 2);
-            let playerColor = this.inFlow ? '#6BCB77' : this.color; // Green for flow
+            ctx.strokeStyle = this.inFlow ? '#6BCB77' : '#4D96FF';
+            ctx.lineWidth = 3;
+            ctx.shadowColor = this.inFlow ? '#6BCB77' : '#4D96FF';
+            ctx.shadowBlur = 15;
+            for (let i = 0; i < 5; i++) {
+                const tentacleAngle = this.angle + (i * Math.PI * 2 / 5);
+                const length = 15 + Math.sin(this.angle * 2 + i) * 5;
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(
+                    this.x + Math.cos(tentacleAngle) * length,
+                    this.y + Math.sin(tentacleAngle) * length + 10 // Hang down a bit
+                );
+            }
+            ctx.stroke();
+            ctx.closePath();
+
+            // Body
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, pulsatingRadius, 0, Math.PI * 2);
+            let playerColor = this.inFlow ? '#6BCB77' : '#4D96FF';
             if (this.isDashing) playerColor = '#FFFFFF';
             ctx.fillStyle = playerColor;
             ctx.shadowColor = playerColor;
             ctx.shadowBlur = 25;
             ctx.fill();
             ctx.closePath();
+
             ctx.shadowBlur = 0;
         }
     };
@@ -301,6 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 score += 150;
                 flow = Math.min(100, flow + 10);
                 createParticle(orb.x, orb.y, orb.color, 15);
+                playSound(orbCollectSound);
                 energyOrbs.splice(index, 1);
             }
         }
@@ -344,6 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
             gameSpeed *= 1.05;
             levelUpScore *= 2.5;
             createParticle(canvasWidth / 2, canvasHeight / 2, '#FFFFFF', 50);
+            playSound(levelUpSound);
         }
 
         if (!player.inFlow) {
@@ -370,6 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startScreen.style.display = 'none';
         gameOverScreen.style.display = 'none';
         resetGame();
+        backgroundMusic.play().catch(e => console.error("Background music playback failed:", e));
         gameLoop();
     }
 
@@ -401,7 +447,11 @@ document.addEventListener('DOMContentLoaded', () => {
         gameState = 'gameOver';
         finalScoreEl.textContent = score;
         gameOverScreen.style.display = 'flex';
-        createParticle(player.x, player.y, player.color, 50);
+        createParticle(player.x, player.y, '#FF6B6B', 50); // Use a reddish color for impact
+        playSound(gameOverSound);
+        backgroundMusic.pause();
+        backgroundMusic.currentTime = 0;
+        triggerScreenShake(15, 0.5);
     }
 
     function gameLoop() {
@@ -439,7 +489,18 @@ document.addEventListener('DOMContentLoaded', () => {
             player.dashDuration = 30;
             player.dashCooldown = 120;
             createParticle(player.x, player.y, '#FFFFFF', 20);
+            playSound(dashSound);
+            triggerScreenShake(5, 0.3);
         }
+    }
+
+    function triggerScreenShake(intensity, duration) {
+        document.body.style.transition = 'transform 0.1s';
+        document.body.style.transform = `translate(${Math.random() * intensity - intensity / 2}px, ${Math.random() * intensity - intensity / 2}px)`;
+
+        setTimeout(() => {
+            document.body.style.transform = 'none';
+        }, duration * 1000);
     }
 
     // Use pointer events for broader compatibility
