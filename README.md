@@ -1,6 +1,7 @@
 # Flow Game
 
 This project was generated entirely by an AI assistant.
+You can play from [here](https://akayibrahim.github.io/flow-game/)
 
 ## Project Description
 
